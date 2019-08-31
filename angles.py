@@ -8,7 +8,7 @@ Created on Wed Aug 28 18:18:09 2019
 from math import degrees, radians
 
 
-def radToDMS(rads, degFormat, prec = 5):
+def radToDMS(rads, degFormat, prec = None):
     """
     rads: radians
     degFormat: "dd", "dm", "dms" of string type
@@ -22,14 +22,22 @@ def radToDMS(rads, degFormat, prec = 5):
     dms = degrees(rads)
     
     if degFormat == "dms":
-        m, s = divmod(dms * 3600, 60); s = round(s, prec)
-        d, m = divmod(m, 60); d = int(d); m = int(m)
+        m, s = divmod(dms * 3600, 60)
+        if prec is not None:
+            s = round(s, prec)
+        d, m = divmod(m, 60)
+        d = int(d); m = int(m)
         dms = [str(x) for x in [d, m, s]]; dms = ":".join(dms)
     elif degFormat == "dm":
-        d, m = divmod(dms * 60, 60); d = int(d); m = round(m, prec)
+        d, m = divmod(dms * 60, 60)
+        d = int(d)
+        if prec is not None:
+            m = round(m, prec)
         dms = [str(x) for x in [d, m]]; dms = ":".join(dms)
-    elif degFormat == "dm":
-        dms = round(dms, prec); dms = str(dms)
+    elif degFormat == "dd":
+        if prec is not None:
+            dms = round(dms, prec)
+        dms = str(dms)
     else:
         raise Exception("degFormat one of the strings: 'dd' or 'dm' or 'dms'")
     return dSign + dms

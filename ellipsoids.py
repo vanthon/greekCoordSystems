@@ -24,7 +24,7 @@ class Ellipsoid():
 
 def geodeticToECEF(lat, lon, h, ellipsoid):
     """
-    lat, lon and h: in radians and meters
+    lat, lon and h: in radians and meters/None
     ellipsoid: class ellipsoid
     returns ECEF Coords X, Y, Z in meters
     """
