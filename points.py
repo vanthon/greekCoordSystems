@@ -2,7 +2,7 @@
 """
 Created on Thu Aug 29 09:27:10 2019
 
-@author: anthon
+@author: Antonios Vatalis
 """
 from angles import DMStoRads, radToDMS
 from ellipsoids import Ellipsoid, geodeticToECEF, ECEFtoGeodetic
@@ -10,7 +10,7 @@ from projections import Projection
 
 
 class GeoPoint():
-    def __init__(self, x, y, z, coordType, ellipsoid):
+    def __init__(self, x, y, z, coordType, ellipsoid, geoidHeight = None):
         """
         This method initializes an object of class GeoPoint
 
@@ -22,16 +22,26 @@ class GeoPoint():
         coordType: one of the following strings:
                         'latlonh-r', 'latlonh-dd', 'latlonh-dm', 'latlonh-dms', 'ECEF'
         ellipsoid: object of class Ellipsoid
+        geoidHeight: geoid Height of Point in meters reffering to its ellipsoid
         """
         self.x = x
         self.y = y
         self.z = z
         self.coordType = coordType
         self.ellipsoid = ellipsoid
+        self.geoidHeight = geoidHeight
         # strX, strY, strZ for __repr__
         self.strX = str(x)
         self.strY = str(y)
         self.strZ = str(z)
+        # default precs
+        if self.coordType == 'ECEF':
+            self.precXY = 3
+        elif self.coordType == 'latlonh-dms':
+            self.precXY = 5
+        else:
+            self.precXY = 6
+        self.precZ = 3
 
     def strXYZ(self, strx, stry, strz = None):
         """
@@ -41,8 +51,18 @@ class GeoPoint():
         """
         self.strX = strx
         self.strY = stry
-        if strz is not  None:
+        if strz is not None:
             self.strZ = strz
+
+    def updPrecs(self, precXY, precZ = None):
+        """
+        This method updates attributes precXY, precZ
+
+        precXY, precZ: ints
+        """
+        self.precXY = precXY
+        if precZ is not None:
+            self.precZ = precZ
 
     def radians(self):
         """
@@ -55,6 +75,7 @@ class GeoPoint():
             self.y = DMStoRads(self.y)
 
         self.strXYZ(str(self.x), str(self.y))
+        self.updPrecs(6)
             
     def latlonh(self, newCoordType):
         """
@@ -77,6 +98,10 @@ class GeoPoint():
             self.y = radToDMS(self.y, newCoordType)
 
         self.strXYZ(str(self.x), str(self.y), str(self.z))
+        if self.coordType == 'latlonh-dms':
+            self.updPrecs(5, 3)
+        else:
+            self.updPrecs(6, 3)
         
     def ECEF(self):
         """
@@ -91,8 +116,9 @@ class GeoPoint():
         self.coordType = "ECEF"
 
         self.strXYZ(str(self.x), str(self.y), str(self.z))
+        self.updPrecs(3, 3)
     
-    def mapPoint(self, projection, geoidHeight = None):
+    def mapPoint(self, projection):
         """
         This method maps the GeoPoint to a specified projection returning
         a MapPoint
@@ -111,11 +137,11 @@ class GeoPoint():
         else:
             self.latlonh("r")
             E, N = projection.toMap(self.x, self.y)
-            if geoidHeight != None and self.z != None:
-                U = self.z - geoidHeight
+            if self.geoidHeight is not None and self.z is not None:
+                U = self.z - self.geoidHeight
             else:
                 U = None
-            return MapPoint(E, N, U, projection)
+            return MapPoint(E, N, U, projection, self.geoidHeight)
 
     def setPrec(self, precXY, precZ):
         """
@@ -142,14 +168,19 @@ class GeoPoint():
             strZ = str(self.z)
 
         self.strXYZ(strX, strY, strZ)
+        self.precXY = precXY
+        self.precZ = precZ
 
     def __repr__(self):
+        # default precision of strX, strY, strZ
+        self.setPrec(self.precXY, self.precZ)
+
         return "(" + ", ".join([self.strX, self.strY, self.strZ, self.coordType,
                                 self.ellipsoid.name]) + ")"
 
 
 class MapPoint():
-    def __init__(self, E, N, U, projection, lat0 = None, lon0 = None):
+    def __init__(self, E, N, U, projection, geoidHeight = None):
         """
         This method initializes an object of class MapPoint
 
@@ -157,19 +188,21 @@ class MapPoint():
         U:       orthometric height of point in meters
         projection: object of class Projection where the MapPoint belongs to
         lat0, lon0: in radians. They matter only if projection belongs to HATT family.
+        geoidHeight: geoid Height of Point in meters reffering to its ellipsoid
         """
         self.E = E
         self.N = N
         self.U = U
         self.projection = projection
         self.ellipsoid = self.projection.ellipsoid
-        # HATT make a try block
-        self.lat0 = lat0
-        self.lon0 = lon0
+        # geoid height
+        self.geoidHeight = geoidHeight
         # strE, strN, strU for __repr__ method
         self.strE = str(E)
         self.strN = str(N)
         self.strU = str(U)
+        # default prec
+        self.precENU = 3
 
     def strENU(self, strE, strN, strU = None):
         """
@@ -183,7 +216,7 @@ class MapPoint():
         if strU is not None:
             self.strU = strU
     
-    def geoPoint(self, coordType, geoidHeight = None):
+    def geoPoint(self, coordType):
         """
         This method transforms the MapPoint to a GeoPoint and returns
         the latter
@@ -194,12 +227,12 @@ class MapPoint():
         geoidHeight: Geoid height of point in meters
         """
         lat, lon = self.projection.fromMap(self.E, self.N)
-        if geoidHeight is not None and self.U is not None:
-            h = self.U + geoidHeight
+        if self.geoidHeight is not None and self.U is not None:
+            h = self.U + self.geoidHeight
         else:
             h = None
 
-        gPoint = GeoPoint(lat, lon, h, "latlonh-r", self.ellipsoid)
+        gPoint = GeoPoint(lat, lon, h, "latlonh-r", self.ellipsoid, self.geoidHeight)
         if coordType == "ECEF":
             gPoint.ECEF()
         elif coordType in ["latlonh-r", "latlonh-dd", "latlonh-dm", 
@@ -227,7 +260,11 @@ class MapPoint():
             strU = str(self.U)
 
         self.strENU(strE, strN, strU)
+        self.precENU = precENU
 
     def __repr__(self):
+        # set default precision
+        self.setPrec(self.precENU)
+
         return "(" + ", ".join([self.strE, self.strN, self.strU, "ENU",
                                 self.projection.name]) + ")"

@@ -2,7 +2,7 @@
 """
 Created on Wed Aug 28 18:21:50 2019
 
-@author: anthon
+@author: Antonios Vatalis
 """
 from math import sqrt, cos, sin, atan2
 from loadFiles import loadEllipsoidParams 

@@ -2,7 +2,7 @@
 """
 Created on Wed Aug 28 20:42:35 2019
 
-@author: anthon
+@author: Antonios Vatalis
 """
 from math import radians
 from loadFiles import loadProjParams

@@ -2,7 +2,7 @@
 """
 Created on Wed Aug 28 18:18:09 2019
 
-@author: anthon
+@author: Antonios Vatalis
 """
 
 from math import degrees, radians
