@@ -1,4 +1,4 @@
-projID, projFamily, ellipsID, scale, lat0(d), lon0(d), falseEasting(m), falseNorthing(m)
+projID, projFamily, ellipsID, scale, lat0(dd), lon0(dd), falseEasting(m), falseNorthing(m)
 TM3-WEST, TM, BESSEL, 0.9999, 34, -3, 200000, 0
 TM3-CENTRAL, TM, BESSEL, 0.9999, 34, 0, 200000, 0
 TM3-EAST, TM, BESSEL, 0.9999, 34, 3, 200000, 0
