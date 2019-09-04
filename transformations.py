@@ -96,15 +96,8 @@ class Transformation:
             self.params = params
 
         elif all(isinstance(x, GeoPoint) for x in (self.source + self.target)):
-            source = []
-            target = []
-            for a, b in zip(self.source, self.target):
-                a.ECEF()
-                b.ECEF()
-                source.append(a)
-                target.append(b)
-            # source = [point.ECEF() for point in self.source]
-            # target = [point.ECEF() for point in self.target]
+            source = [(point.ECEF(), point)[1] for point in self.source]
+            target = [(point.ECEF(), point)[1] for point in self.target]
             designArray = []  # array_like
             for point in self.source:
                 scaleArray = rotArray = shiftArray = [[], [], []]
