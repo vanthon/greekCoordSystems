@@ -46,6 +46,18 @@ def loadProjParams(projName):
                         "in the system")
 
 
+def loadCoordsFile(fileName):
+    """"""
+    with open(fileName) as fObj:
+        readCSV = reader(fObj, delimiter = ',')
+        data = []
+        for line in readCSV:
+            PtIDxyzGeoid = 5 * [None]  # [PtID, x, y, z, GeoidHeight]
+            for count, lineEl in enumerate(line):
+                PtIDxyzGeoid[count] = lineEl.strip()
+            data.append(PtIDxyzGeoid)
+        return data
+
 
 
 

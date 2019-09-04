@@ -51,8 +51,10 @@ def DMStoRads(dms):
     """
     dms = dms.strip()
     
-    if dms.startswith('-'): dSign = -1
-    else: dSign = 1
+    if dms.startswith('-'):
+        dSign = -1
+    else:
+        dSign = 1
     
     dms = dms.split(':')
     dms = [abs(float(x)) for x in dms]
