@@ -65,3 +65,18 @@ def DMStoRads(dms):
         dms[1] = dms[1] / 60
     dms = sum(dms)
     return radians(dSign * dms)
+
+
+def shiftLon(lon, dlon, lonFormat = 'dms'):
+    """
+    lon, dlon: both strings for dd, dm, dms or both radians
+    lonFormat = r, dd, dm, dms
+    """
+    if all([isinstance(lon, str), isinstance(dlon, str)]):
+        lon = DMStoRads(lon)
+        dlon = DMStoRads(dlon)
+    lon = lon + dlon
+    if lonFormat in ['dd', 'dm', 'dms']:
+        return radToDMS(lon, lonFormat)
+    else:
+        return lon

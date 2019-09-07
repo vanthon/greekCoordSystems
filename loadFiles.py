@@ -13,15 +13,13 @@ def loadEllipsoidParams(ellName):
     """
     with open("refEllipsoids.txt") as fObj:
         readCSV = reader(fObj, delimiter = ',')
+        header = [elm.strip() for elm in next(readCSV)]
+        values = len(header) * [None]
         for line in readCSV:
-            ellID = line[0].strip()
-            if ellID == ellName:
-                try:
-                    row = [ellID] +\
-                          [float(lineEl.strip()) for lineEl in line[1:]]
-                    return row
-                except ValueError:
-                    raise ValueError("Check your ellipsoid parameters.")
+            if line[0].strip() == ellName:
+                for indx, elm in enumerate(line):
+                    values[indx] = elm.strip()
+                return dict(zip(header, values))
         raise Exception("The ellipsoid you defined does not exist " +\
                         "in the system")
 
@@ -30,20 +28,18 @@ def loadProjParams(projName):
     """
     projName string: "TM3-WEST", "TM3-CENTRAL", "TM3-EAST", "TM87", 
                      "UTM-34N", "UTM-35N"
-    """
+    """  
     with open("projections.txt") as fObj:
         readCSV = reader(fObj, delimiter = ',')
+        header = [elm.strip() for elm in next(readCSV)]
+        values = len(header) * [None]
         for line in readCSV:
-            projID = line[0].strip()
-            if projID == projName:
-                try:
-                    row = [lineEl.strip() for lineEl in line[:3]] +\
-                          [float(lineEl.strip()) for lineEl in line[3:]]
-                    return row
-                except ValueError:
-                    raise ValueError("Check your projection parameters.")
+            if line[0].strip() == projName:
+                for indx, elm in enumerate(line):
+                    values[indx] = elm.strip()
+                return dict(zip(header, values))
         raise Exception("The projection you defined does not exist " +\
-                        "in the system")
+                    "in the system")
 
 
 def loadCoordsFile(fileName):
@@ -52,33 +48,9 @@ def loadCoordsFile(fileName):
         readCSV = reader(fObj, delimiter = ',')
         data = []
         for line in readCSV:
-            PtIDxyzGeoid = 5 * [None]  # [PtID, x, y, z, GeoidHeight]
-            for count, lineEl in enumerate(line):
-                PtIDxyzGeoid[count] = lineEl.strip()
-            data.append(PtIDxyzGeoid)
+            if line:
+                PtIDxyzGeoid = 5 * [None]  # [PtID, x, y, z, GeoidHeight]
+                for count, lineEl in enumerate(line):
+                    PtIDxyzGeoid[count] = lineEl.strip()
+                data.append(PtIDxyzGeoid)
         return data
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

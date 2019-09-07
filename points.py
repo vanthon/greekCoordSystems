@@ -6,8 +6,9 @@ Created on Thu Aug 29 09:27:10 2019
 """
 from math import sqrt, cos, sin, atan2
 from angles import DMStoRads, radToDMS
-from loadFiles import  loadCoordsFile
+from loadFiles import loadCoordsFile
 from modelers import Ellipsoid, Projection
+from copy import deepcopy
 
 
 class GeoPoint():
@@ -40,6 +41,7 @@ class GeoPoint():
                  'latlonh-dd': [6, 3],
                  'latlonh-dm': [6, 3],
                  'latlonh-dms': [5, 3]}
+        self.coords = [self.x, self.y, self.z, self.geoidHeight]
 
     def radians(self):
         """
@@ -118,6 +120,24 @@ class GeoPoint():
 
         self.precs[self.coordType] = [precXY, precZ]
 
+    def __sub__(self, other):
+        _coordType = self.coordType
+        self.ECEF()
+        other.ECEF()
+
+        coords = []
+        for x, y in zip(self.coords, other.coords):
+            try:
+                coords.append(x-y)
+            except TypeError:
+                coords.append(None)
+        
+        gPt = GeoPoint(self.id, coords[0], coords[1], coords[2],
+                       self.coordType, self.projection, coords[3])
+        if _coordType != 'ECEF':
+            gPt.latlonh(_coordType.split('-')[1])
+        return gPt
+    
     def __repr__(self):
         # default precision of strX, strY, strZ
         self.setPrec(self.precs[self.coordType][0],
@@ -141,15 +161,16 @@ class MapPoint():
         geoidHeight: geoid Height of Point in meters reffering to its ellipsoid
         """
         self.id = str(ptID)
-        self.E = E
-        self.N = N
-        self.U = U
+        self.x = E
+        self.y = N
+        self.z = U
         self.projection = projection
         self.ellipsoid = self.projection.ellipsoid
         # geoid height
         self.geoidHeight = geoidHeight
         # default prec
         self.prec = 3
+        self.coords = [self.x, self.y, self.z, self.geoidHeight]
 
     def setPrec(self, prec):
         """
@@ -162,129 +183,193 @@ class MapPoint():
              print(a) # prints a with its coords in desired precision
         """
         # set precision of E, N
-        self.strE = str(round(self.E, prec))
-        self.strN = str(round(self.N, prec))
+        self.strX = str(round(self.x, prec))
+        self.strY = str(round(self.y, prec))
         # set precision of U
-        if self.U is not None:
-            self.strU = str(round(self.U, prec))
+        if self.z:
+            self.strZ = str(round(self.z, prec))
         else:
-            self.strU = str(self.U)
-        if self.geoidHeight is not None:
+            self.strZ = str(self.z)
+        if self.geoidHeight:
             self.strGeoidHeight = str(round(self.geoidHeight, prec))
         else:
             self.strGeoidHeight = str(self.geoidHeight)
 
         self.prec = prec
 
+    def __sub__(self, other):
+        coords = []
+        for x, y in zip(self.coords, other.coords):
+            try:
+                coords.append(x-y)
+            except TypeError:
+                coords.append(None)
+        
+        return MapPoint(self.id, coords[0], coords[1], coords[2], 
+                        self.projection, coords[3])
+
     def __repr__(self):
         # set default precision
         self.setPrec(self.prec)
 
-        return "(" + ", ".join([self.id, self.strE, self.strN, self.strU, "ENU",
+        return "(" + ", ".join([self.id, self.strX, self.strY, self.strZ, "ENU",
                                 self.projection.name,
                                 self.strGeoidHeight]) + ")"
 
 
-def geodeticToECEF(point):
+def _geodeticToECEF(point):
     """
     lat, lon and h: in radians and meters/None
     ellipsoid: class ellipsoid
     returns ECEF Coords X, Y, Z in meters
     """
-    ptID = point.id
-    point.latlonh('r')
-    ellipsoid = point.ellipsoid
-    geoidHeight = point.geoidHeight
-    lat = point.x
-    lon = point.y
-    h = point.z
-    if h is None:
-        h = 0
+    _point = deepcopy(point)
+    if point.coordType != 'ECEF':
+        ptID = _point.id
+        _point.latlonh('r')
+        ellipsoid = _point.ellipsoid
+        geoidHeight = _point.geoidHeight
+        lat = _point.x
+        lon = _point.y
+        h = _point.z
+        if h is None:
+            h = 0
+    
+        W = sqrt(1 - ellipsoid.eSquared * (sin(lat))**2)
+        N = ellipsoid.a / W
+        X = (N + h) * cos(lat) * cos(lon)
+        Y = (N + h) * cos(lat) * sin(lon)
+        Z = ((1 - ellipsoid.eSquared) * N + h) * sin(lat)
+        return GeoPoint(ptID, X, Y, Z, 'ECEF', ellipsoid, geoidHeight)
+    else:
+        return _point
 
-    W = sqrt(1 - ellipsoid.eSquared * (sin(lat))**2)
-    N = ellipsoid.a / W
-    X = (N + h) * cos(lat) * cos(lon)
-    Y = (N + h) * cos(lat) * sin(lon)
-    Z = ((1 - ellipsoid.eSquared) * N + h) * sin(lat)
-    return GeoPoint(ptID, X, Y, Z, 'ECEF', ellipsoid, geoidHeight)
+
+def geodeticToECEF(points):
+    if isinstance(points, list):
+        return [_geodeticToECEF(point) for point in points]
+    else:
+        return _geodeticToECEF(points)
 
 
-def ECEFtoGeodetic(point, coordType):
+def _ECEFtoGeodetic(point, coordType):
     """
     x, y, z in meters
     ellipsoid: class ellipsoid
     returns Geodetic lat, lon in radians (between -pi & pi) and h in meters
     """
-    ptID = point.id
-    x = point.x
-    y = point.y
-    z = point.z
-    ellipsoid = point.ellipsoid
-    geoidHeight = point.geoidHeight
+    _point = deepcopy(point)
+    if point.coordType == 'ECEF':
+        ptID = _point.id
+        x = _point.x
+        y = _point.y
+        z = _point.z
+        ellipsoid = _point.ellipsoid
+        geoidHeight = _point.geoidHeight
+    
+        lon = atan2(y, x)
+        P = sqrt(x**2 + y**2)
+        lat0 = atan2((z * (1 + ellipsoid.ePrimeSquared)), P)
+        dlat = 1
+        while dlat > 10**-12:
+            W = sqrt(1 - ellipsoid.eSquared * (sin(lat0))**2)
+            N = ellipsoid.a / W
+            lat = atan2((z + ellipsoid.eSquared * N * sin(lat0)), P)
+            dlat = abs(lat - lat0)
+            lat0 = lat
+        h = (z / sin(lat)) - ((1 - ellipsoid.eSquared) * N)
+    
+        _point = GeoPoint(ptID, lat, lon, h, 'latlonh-r', ellipsoid, geoidHeight)
+        _point.latlonh(coordType)
+        return _point
+    else:
+        _point.latlonh(coordType)
+        return _point
 
-    lon = atan2(y, x)
-    P = sqrt(x**2 + y**2)
-    lat0 = atan2((z * (1 + ellipsoid.ePrimeSquared)), P)
-    dlat = 1
-    while dlat > 10**-12:
-        W = sqrt(1 - ellipsoid.eSquared * (sin(lat0))**2)
-        N = ellipsoid.a / W
-        lat = atan2((z + ellipsoid.eSquared * N * sin(lat0)), P)
-        dlat = abs(lat - lat0)
-        lat0 = lat
-    h = (z / sin(lat)) - ((1 - ellipsoid.eSquared) * N)
 
-    gPt = GeoPoint(ptID, lat, lon, h, 'latlonh-r', ellipsoid, geoidHeight)
-    gPt.latlonh(coordType)
-    return gPt
+def ECEFtoGeodetic(points, coordType):
+    if isinstance(points, list):
+        return [_ECEFtoGeodetic(point, coordType) for point in points]
+    else:
+        return _ECEFtoGeodetic(points, coordType)
 
 
-def project(point, projection):
+def _project(point, projection):
     """
     point: class GeoPoint
     projection: class Projection
     """
-    try:
-        if point.ellipsoid.name != projection.ellipsoid.name:
-            raise Exception()
-    except Exception as error:
-        print("Error: ")
-        print("Your projection type ellipsoid differs from the")
-        print("original one")
-    point.latlonh('r')
-    lat, lon, h, geoidHeight = point.x, point.y, point.z, point.geoidHeight
-    E, N = projection.directEqns(lat, lon, *projection.params[2:])
-    try:
-        U = h - geoidHeight
-    except TypeError:
-        U = 0
-    
-    return MapPoint(point.id, E, N, U, projection, geoidHeight)
+    _point = deepcopy(point)
+    if isinstance(point, GeoPoint):
+        try:
+            if point.ellipsoid.name != projection.ellipsoid.name:
+                raise Exception()
+        except Exception as error:
+            raise Exception("Error: Your projection type ellipsoid differs"
+                            " from the original one")
+        _point.latlonh('r')
+        lat, lon, h, geoidHeight = _point.x, _point.y, _point.z, _point.geoidHeight
+        E, N = projection.directEqns(lat, lon)
+        try:
+            U = h - geoidHeight
+        except TypeError:
+            U = 0
+        
+        return MapPoint(point.id, E, N, U, projection, geoidHeight)
+    else:
+        return _point
 
 
-def unproject(point, coordType):
+def project(points, projection):
+    """
+    point2: list of GeoPoints or single GeoPoint
+    projection: class Projection
+    """
+    if isinstance(points, list):
+        return [_project(point, projection) for point in points]
+    else:
+        return _project(points, projection)
+            
+            
+def _unproject(point, coordType):
     """
     point: class MapPoint
     coordType: string - ECEF, latlonh-r, latlonh-dd, latlonh-dm, latlonh-dms
     """
-    E, N, U = point.E, point.N, point.U
-    ellipsoid, geoidHeight = point.ellipsoid, point.geoidHeight
-    lat, lon = point.projection.invEqns(E, N, *point.projection.params[2:])
-    try:
-        h = U + geoidHeight
-    except TypeError:
-        h = 0
-    
-    gPt = GeoPoint(point.id, lat, lon, h, 'latlonh-r', ellipsoid, geoidHeight)
+    if isinstance(point, MapPoint):
+        E, N, U = point.x, point.y, point.z
+        ellipsoid, geoidHeight = point.ellipsoid, point.geoidHeight
+        lat, lon = point.projection.invEqns(E, N)
+        try:
+            h = U + geoidHeight
+        except TypeError:
+            h = 0
+        _point = GeoPoint(point.id, lat, lon, h, 'latlonh-r', ellipsoid, geoidHeight)
+    else:
+        _point = deepcopy(point)
+
     if coordType == 'ECEF':
-        gPt.ECEF()
-    elif coordType in ["latlonh-dd", "latlonh-dm", "latlonh-dms"]:
-        gPt.latlonh(coordType.split('-')[-1])
+        _point.ECEF()
+    elif coordType in ["latlonh-r", "latlonh-dd", "latlonh-dm", "latlonh-dms"]:
+        _point.latlonh(coordType.split('-')[-1])
+    return _point
 
-    return gPt
+
+def unproject(points, coordType):
+    """
+    point: class MapPoint
+    coordType: string - ECEF, latlonh-r, latlonh-dd, latlonh-dm, latlonh-dms
+    """
+    if isinstance(points, list):
+        return [_unproject(point, coordType) for point in points]
+    else:
+        return _unproject(points, coordType)
 
 
-def fileDataToPoints(fileName, model, coordType = None):
+def fileDataToPoints(fileName, model, coordType = None, lastClmIsGeoid = True):
+    """
+     coordType: ECEF, latlonh-r, latlonh-dd, latlonh-dm, latlonh-dms, ENU
+    """
     if coordType in ["latlonh-dd", "latlonh-dm", "latlonh-dms"]:
         latlonIsStr = True
     else:
@@ -303,4 +388,9 @@ def fileDataToPoints(fileName, model, coordType = None):
         elif isinstance(model, Projection):
             args = sublist[:-1] + [model] + [sublist[-1]]
             points.append(MapPoint(*args))
+
+    if not lastClmIsGeoid:
+        for point in points:
+            point.geoidHeight = point.z - point.geoidHeight
+
     return points

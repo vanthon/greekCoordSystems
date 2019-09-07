@@ -4,10 +4,10 @@ Created on Mon Sep  2 14:25:03 2019
 
 @author: anthon
 """
-from math import radians
 from importlib import import_module
 from loadFiles import loadEllipsoidParams, loadProjParams
 from angles import DMStoRads
+from csv import reader
 
 
 class Ellipsoid():
@@ -18,9 +18,14 @@ class Ellipsoid():
         """
         ellName: string, 'WGS84', 'GRS80', 'BESSEL', 'HAYFORD'
         """
-        self.name, self.a, self.b, self.f, self.eSquared, self.ePrimeSquared =\
-            loadEllipsoidParams(ellName)
-    
+        params = loadEllipsoidParams(ellName)
+        self.name = params['ellipsID']
+        self.a = float(params['semiMajorAxis'])
+        self.b = float(params['semiMinorAxis'])
+        self.f = float(params['flattening'])
+        self.eSquared = float(params['eccentricitySquared'])
+        self.ePrimeSquared = float(params['eccentricityPrimeSquared'])
+
     def __repr__(self):
         return "EllipsoidID: " + self.name
 
@@ -32,32 +37,82 @@ class Projection():
                          "UTM-34N", "UTM-35N"
         lat0, lon0: numeral for radians
                     string for dd, dm, dms. e.g. '23.33', '3:34.2', '-0:3:4.33'
-        """
+        """     
         params = loadProjParams(projName)
-        self.family = params[1]
-        params[2] = Ellipsoid(params[2]) # ellName to Ellipsoid class
+        self.name = params['projID']
+        self.family = params['projFamily']
+        self.ellipsoid = Ellipsoid(params['ellipsoid'])
+        self.m0 = params['scale']     
+        self.E0 = params['falseEasting']
+        self.N0 = params['falseNorthing']
         try:
-            params[4] = radians(params[4]) # lat0 from degrees to radians
-            params[5] = radians(params[5]) # lon0 from degrees to radians
-        except IndexError:
+            self.m0 = float(self.m0)       
+            self.E0 = float(self.E0)
+            self.N0 = float(self.N0)
+        except TypeError:
             pass
-            
-        if all([type(lat0) is str, type(lon0) is str]):
-            lat0 = DMStoRads(lat0)
-            lon0 = DMStoRads(lon0)
-            params = params + [lat0, lon0]
-        else:
-            if all([lat0 is not None, lon0 is not None]):
-                params = params + [lat0, lon0]
         
-        self.name = params[0]
-        self.ellipsoid = params[2]
-        self.params = params
+        self.lat0 = params['lat0']
+        self.lon0 = params['lon0']
+        if all([self.lat0, self.lon0]):
+            self.lat0 = DMStoRads(self.lat0)
+            self.lon0 = DMStoRads(self.lon0)
         
-        eqnsFamily = import_module(self.family + "eqns")
-        self.directEqns = getattr(eqnsFamily, "direct" + self.family)
-        self.invEqns = getattr(eqnsFamily, "inv" + self.family)
+        if all([lat0, lon0]):
+            if all([isinstance(lat0, str), isinstance(lon0, str)]):
+                lat0 = DMStoRads(lat0)
+                lon0 = DMStoRads(lon0)
+            self.lat0 = lat0
+            self.lon0 = lon0
 
+        eqnsFamily = import_module(self.family + "eqns")
+        self._directEqns = getattr(eqnsFamily, "direct" + self.family)
+        self._invEqns = getattr(eqnsFamily, "inv" + self.family)
+    
+    def directEqns(self, lat, lon):
+        return self._directEqns(lat, lon, self)  # returns E, N in meters
+    
+    def invEqns(self, E, N):
+        return self._invEqns(E, N, self)  #returns lat, lon in radians
+    
     def __repr__(self):
         return ", ".join(["projID: " + self.name, "projFamily: " +
                           self.family, "EllipsoidID: " + self.ellipsoid.name])
+
+
+def projWithCommonEll(ellipsoid):
+    """"""
+    with open("projections.txt") as fObj:
+        readCSV = reader(fObj, delimiter = ',')
+        for line in readCSV:
+            if line[2].strip() == ellipsoid.name:
+                return Projection(line[0].strip())
+        raise Exception("The ellipsoid you defined does not exist in the system")
+
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    

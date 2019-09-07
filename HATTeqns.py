@@ -6,13 +6,17 @@ Created on Wed Aug 28 18:16:44 2019
 """
 from math import sqrt, cos, sin, tan
 
-
-def directHATT(lat, lon, ellipsoid, lat0, lon0):
+#def directHATT(lat, lon, ellipsoid, lat0, lon0):
+def directHATT(lat, lon, projection):
     """
     lat, lon, lat0, lon0 in radians
     ellipsoid of class Ellipsoid
     returns x, y in meters
     """
+    ellipsoid = projection.ellipsoid
+    lat0 = projection.lat0
+    lon0 = projection.lon0
+    
     hta2o = ellipsoid.ePrimeSquared * ((cos(lat0))**2)
     to = tan(lat0)
     Wo = sqrt(1 - ellipsoid.eSquared * ((sin(lat0))**2))
@@ -42,13 +46,17 @@ def directHATT(lat, lon, ellipsoid, lat0, lon0):
 
     return x, y
 
-
-def invHATT(x, y, ellipsoid, lat0, lon0):
+#def invHATT(x, y, ellipsoid, lat0, lon0):
+def invHATT(x, y, projection):
     """
     x, y in meters
     lat0, lon0 in radians
     returns lat, lon in radians
     """
+    ellipsoid = projection.ellipsoid
+    lat0 = projection.lat0
+    lon0 = projection.lon0
+    
     hta2o = ellipsoid.ePrimeSquared * ((cos(lat0))**2)
     to = tan(lat0)
     Wo = sqrt(1 - ellipsoid.eSquared * ((sin(lat0))**2))
