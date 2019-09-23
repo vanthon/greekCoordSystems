@@ -71,8 +71,8 @@ def invTM(E, N, projection):
     """
     ellipsoid = projection.ellipsoid
     m0 = projection.m0
-    lat0 = projection.lat0
-    lon0 = projection.lon0
+    lat0 = projection.lat0.radians
+    lon0 = projection.lon0.radians
     E0 = projection.E0
     N0 = projection.N0
     

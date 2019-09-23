@@ -491,17 +491,21 @@ class ECEFpoint:
 
     @property
     def U(self):
-        point = self.geodetic()
+        # point = self.geodetic()
+        lat, lon, h = _ECEFtoGeodetic(self.X, self.Y, self.Z,
+                                      self.coordSystem)
         try:
-            return point.h - self.geoidHeight
+            return h - self.geoidHeight
         except TypeError:
             return None
 
     @U.setter
     def U(self, value):
-        point = self.geodetic()
+        # point = self.geodetic()
+        lat, lon, h = _ECEFtoGeodetic(self.X, self.Y, self.Z,
+                                      self.coordSystem)
         try:
-            self.geoidHeight = point.h - value
+            self.geoidHeight = h - value
         except TypeError:
             self.geoidHeight = None
 

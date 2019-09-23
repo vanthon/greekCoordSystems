@@ -86,7 +86,7 @@ def invHATT(x, y, projection):
            (to*(1+3*(to**2))*(x**3)*y)/(3*(No**4)*(cos(lat0)))
 
     lat = Angle(dlat + lat0)
-    lon = Angle(dlon + lon0 )
+    lon = Angle(dlon + lon0)
     lat.angleType = 'dms'
     lon.angleType = 'dms'
     return lat, lon

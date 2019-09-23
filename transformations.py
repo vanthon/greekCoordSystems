@@ -322,7 +322,7 @@ class Transformation:
                      self.shift)
 
     def applySim3D(self, point):
-        return applySim2D(point, self.sim3D)
+        return applySim3D(point, self.sim3D)
 
     @property
     def plane(self):
