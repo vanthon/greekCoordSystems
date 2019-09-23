@@ -5,17 +5,21 @@ Created on Wed Aug 28 18:16:44 2019
 @author: anthon
 """
 from math import sqrt, cos, sin, tan
+from angles import Angle
 
-#def directHATT(lat, lon, ellipsoid, lat0, lon0):
+
+# def directHATT(lat, lon, ellipsoid, lat0, lon0):
 def directHATT(lat, lon, projection):
     """
-    lat, lon, lat0, lon0 in radians
+    lat, lon, lat0, lon0 in Angle
     ellipsoid of class Ellipsoid
     returns x, y in meters
     """
+    lat = lat.radians
+    lon = lon.radians
     ellipsoid = projection.ellipsoid
-    lat0 = projection.lat0
-    lon0 = projection.lon0
+    lat0 = projection.lat0.radians
+    lon0 = projection.lon0.radians
     
     hta2o = ellipsoid.ePrimeSquared * ((cos(lat0))**2)
     to = tan(lat0)
@@ -46,7 +50,8 @@ def directHATT(lat, lon, projection):
 
     return x, y
 
-#def invHATT(x, y, ellipsoid, lat0, lon0):
+
+# def invHATT(x, y, ellipsoid, lat0, lon0):
 def invHATT(x, y, projection):
     """
     x, y in meters
@@ -54,8 +59,8 @@ def invHATT(x, y, projection):
     returns lat, lon in radians
     """
     ellipsoid = projection.ellipsoid
-    lat0 = projection.lat0
-    lon0 = projection.lon0
+    lat0 = projection.lat0.radians
+    lon0 = projection.lon0.radians
     
     hta2o = ellipsoid.ePrimeSquared * ((cos(lat0))**2)
     to = tan(lat0)
@@ -80,6 +85,8 @@ def invHATT(x, y, projection):
            (to*(2+3*(to**2))*x*(y**3))/(3*(No**4)*(cos(lat0))) -\
            (to*(1+3*(to**2))*(x**3)*y)/(3*(No**4)*(cos(lat0)))
 
-    lat = dlat + lat0  # in radians
-    lon = dlon + lon0  # in radians
+    lat = Angle(dlat + lat0)
+    lon = Angle(dlon + lon0 )
+    lat.angleType = 'dms'
+    lon.angleType = 'dms'
     return lat, lon

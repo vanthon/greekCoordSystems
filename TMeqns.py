@@ -7,25 +7,27 @@ Created on Wed Aug 28 18:14:28 2019
 
 from math import sqrt, cos, sin, tan
 from meridians import meridianLength, latFromMeridianLength
+from angles import Angle
 
 
-#def directTM(lat, lon, ellipsoid, m0, lat0, lon0, E0, N0):
+# def directTM(lat, lon, ellipsoid, m0, lat0, lon0, E0, N0):
 def directTM(lat, lon, projection):
     """
-    geodetic values in radians
+    geodetic values in Angle
     ellipsoid of class Ellipsoid
     m0 scale factor
     E0, N0 false Easting, Northing in meters
     returns projected coordinates of a point in meters
     """
+    lat = lat.radians
+    lon = lon.radians
     ellipsoid = projection.ellipsoid
     m0 = projection.m0
-    lat0 = projection.lat0
-    lon0 = projection.lon0
+    lat0 = projection.lat0.radians
+    lon0 = projection.lon0.radians
     E0 = projection.E0
     N0 = projection.N0
-    
-    
+
     t = tan(lat)
     hta2 = ellipsoid.ePrimeSquared * (cos(lat)**2)
     dlon = lon-lon0
@@ -58,7 +60,7 @@ def directTM(lat, lon, projection):
     return E, N
 
 
-#def invTM(E, N, ellipsoid, m0, lat0, lon0, E0, N0):
+# def invTM(E, N, ellipsoid, m0, lat0, lon0, E0, N0):
 def invTM(E, N, projection):
     """
     geodetic values in radians
@@ -104,4 +106,9 @@ def invTM(E, N, projection):
 
     lat = lat - (T10 * E**2) + (T11 * E**4) - (T12 * E**6) + (T13 * E**8)
     lon = lon0 + (T14*Q) - (T15 * Q**3) + (T16 * Q**5) - (T17 * Q**7)
+
+    lat = Angle(lat)
+    lat.angleType = 'dms'
+    lon = Angle(lon)
+    lon.angleType = 'dms'
     return lat, lon

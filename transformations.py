@@ -1,283 +1,426 @@
 # -*- coding: utf-8 -*-
 import numpy as np
-from points import MapPoint, GeoPoint, project, unproject, geodeticToECEF
-from modelers import projWithCommonEll
-from copy import copy, deepcopy
+from points import MapPoint, GeoPoint, ECEFpoint, Points, importPoints
+from modelers import filterProj, Ellipsoid, Projection
+from copy import deepcopy
 from math import cos, sin
+from subprocess import call
+from os import path, remove
+from angles import Angle
+
+
+def egm08(source: Points):
+    """
+    source: Points
+    returns: Points
+    """
+    if path.exists("OUTPUT.DAT"):
+        remove("OUTPUT.DAT")
+
+    with open('INPUT.DAT', 'r+') as fObj:
+        for point in source.geodetic():
+            fObj.write('   {}  {}\n'.format(point.lat.dd, point.lon.dd))
+
+    call('hsynth_WGS84')
+
+    with open('OUTPUT.DAT') as fObj:
+        geoids = []
+        for line in fObj:
+            if line:
+                geoids.append(float(line.split()[2]))
+
+    points = deepcopy(source)
+    points.GMHeight = geoids
+    return points
+
+
+def sim2D(source: Points, target: Points, scale=True, rotation=True, shift=True):
+    """
+
+    :param source: list of lists, [[E1, N1], [E2, N2], ...]
+    :param target: list of lists, [[E'1, N'1], [E'2, N'2], ...]
+    :param shift:
+    :param rotation:
+    :param scale:
+    :return: dictionary of parameters, c, d, tx, ty
+    """
+    if not (source.all(MapPoint) and target.all(MapPoint)):
+        raise Exception('Points should be of MapPoint type')
+
+    A = []  # array_like
+    for point in source:
+        E, N = point.E, point.N
+        scaleRotArray = shiftArray = [[], []]
+        if rotation:
+            scaleRotArray = [[E, N], [N, -E]]
+        else:
+            if scale:
+                scaleRotArray = [[E], [N]]
+        if shift:
+            shiftArray = [[1, 0], [0, 1]]
+        for x, y in zip(scaleRotArray, shiftArray):
+            A.append(x + y)
+
+    b = [coord for point in target for coord in [point.E, point.N]]
+    paramsValues = np.linalg.lstsq(A, b, rcond=None)
+    paramsValues = paramsValues[0]
+
+    paramsKeys = ['c', 'd', 'tx', 'ty']
+    if (not rotation) and (not scale):
+        paramsKeys.pop(0)
+        paramsKeys.pop(1)
+    if not rotation:
+        paramsKeys.pop(1)
+    if not shift:
+        paramsKeys.pop(2)
+        paramsKeys.pop(3)
+
+    params = {'c': 1, 'd': 0, 'tx': 0, 'ty': 0}
+    params.update(zip(paramsKeys, paramsValues))
+    params['coordSystem'] = target.coordSystem
+
+    return params
+
+
+def applySim2D(point: MapPoint, params: dict):
+    """
+
+    :param point: list of E, N coordinates, i.e [E, N]
+    :param params: dictionary of paramters c, d, tx, ty
+    :return: E', N' coordinates
+    """
+    if not isinstance(point, MapPoint):
+        raise Exception('point should be of MapPoint')
+    E, N = point.E, point.N
+    Epr = params['c'] * E + params['d'] * N + params['tx']
+    Npr = -params['d'] * E + params['c'] * N + params['ty']
+    return MapPoint(point.id, Epr, Npr, point.U, params['coordSystem'],
+                    point.geoidHeight, point.GMHeight)
+
+
+def sim3D(source: Points, target: Points, scale=True, rotation=True, shift=True):
+    """
+
+    :param source:
+    :param target:
+    :param scale:
+    :param rotation:
+    :param shift:
+    :return:
+    """
+    if not (source.all(ECEFpoint) and target.all(ECEFpoint)):
+        raise Exception('Points should be of ECEFpoint type')
+
+    A = []  # array_like
+    for point in source:
+        X, Y, Z = point.X, point.Y, point.Z
+        scaleArray = rotArray = shiftArray = [[], [], []]
+        if scale:
+            scaleArray = [[X], [Y], [Z]]
+        if rotation:
+            rotArray = [[0, -Z, Y], [Z, 0, -X], [-Y, X, 0]]
+        if shift:
+            shiftArray = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+
+        for x, y, z in zip(scaleArray, rotArray, shiftArray):
+            A.append(x+y+z)
+
+    b = [x - y for a, b in zip(target, source) for x, y in
+         zip([a.X, a.Y, a.Z], [b.X, b.Y, b.Z])]
+
+    paramsValues = np.linalg.lstsq(A, b, rcond=None)
+    paramsValues = paramsValues[0]
+
+    paramsKeys = [x if y else [] for x, y in
+                  zip([['dm'], ['ex', 'ey', 'ez'], ['tx', 'ty', 'tz']],
+                      [scale, rotation, shift])]
+    paramsKeys = [x for sublist in paramsKeys for x in sublist]
+
+    params = {'dm': 0, 'ex': 0, 'ey': 0, 'ez': 0, 'tx': 0, 'ty': 0, 'tz': 0}
+    params.update(zip(paramsKeys, paramsValues))
+    params['coordSystem'] = target.coordSystem
+
+    return params
+
+
+def applySim3D(point: ECEFpoint, params: dict):
+    if not isinstance(point, ECEFpoint):
+        raise Exception('point should be of type ECEFpoint')
+
+    X, Y, Z = point.X, point.Y, point.Z
+    Xpr = (params['dm'] * X + params['ez'] * Y - params['ey'] * Z +
+           params['tx'] + X)
+    Ypr = (-params['ez'] * X + params['dm'] * Y + params['ex'] * Z +
+           params['ty'] + Y)
+    Zpr = (params['ey'] * X - params['ex'] * Y + params['dm'] * Z +
+           params['tz'] + Z)
+    return ECEFpoint(point.id, Xpr, Ypr, Zpr, params['coordSystem'],
+                     point.geoidHeight, point.GMHeight)
+
+
+def plane(source: Points, GM=False):
+    if not source.all(MapPoint):
+        raise Exception('points should be of type MapPoint')
+
+    if GM:
+        geoids = [point.geoidHeight - point.GMHeight for point in source]
+    else:
+        geoids = [point.geoidHeight for point in source]
+    designArray = [[1, point.E, point.N] for point in source]
+    paramsValues = np.linalg.lstsq(designArray, geoids, rcond=None)
+    paramsValues = paramsValues[0]
+    paramsKeys = ['a0', 'a1', 'a2']
+    params = dict(zip(paramsKeys, paramsValues))
+    params['GM'] = GM
+    return params
+
+
+def applyPlane(point, params):
+    if not isinstance(point, MapPoint):
+        raise Exception('point should be of MapPoint type')
+
+    if params['GM']:
+        if point.GMHeight:
+            GMHeight = point.GMHeight
+        else:
+            raise Exception('You apply a transformation that includes GMHeight'
+                            'while your point does not have a valid GMHeight')
+    else:
+        GMHeight = 0
+
+    geoidHeight = params['a0'] + params['a1']*point.E + params['a2']*point.N + GMHeight
+    mapPoint = deepcopy(point)
+    mapPoint.geoidHeight = geoidHeight
+    return mapPoint
+
+
+def poly2d(source: Points, GM=False):
+    if not source.all(MapPoint):
+        raise Exception('points should be of type MapPoint')
+
+    if GM:
+        geoids = [point.geoidHeight - point.GMHeight for point in source]
+    else:
+        geoids = [point.geoidHeight for point in source]
+
+    designArray = [[1, point.E, point.N, point.E * point.N, point.E ** 2, point.N ** 2] for point in source]
+    paramsValues = np.linalg.lstsq(designArray, geoids, rcond=None)
+    paramsValues = paramsValues[0]
+    paramsKeys = ['a0', 'a1', 'a2', 'a3', 'a4', 'a5']
+    params = dict(zip(paramsKeys, paramsValues))
+    params['GM'] = GM
+    return params
+
+
+def applyPoly2d(point: MapPoint, params):
+    if not isinstance(point, MapPoint):
+        raise Exception('point should be of MapPoint type')
+
+    if params['GM']:
+        if point.GMHeight:
+            GMHeight = point.GMHeight
+        else:
+            raise Exception('You apply a transformation that includes GMHeight'
+                            'while your point does not have a valid GMHeight')
+    else:
+        GMHeight = 0
+
+    geoidHeight = (params['a0'] + params['a1'] * point.E + params['a2'] * point.N +
+                   params['a3'] * point.E * point.N + params['a4'] * point.E ** 2 +
+                   params['a5'] * point.N ** 2) + GMHeight
+    mapPoint = deepcopy(point)
+    mapPoint.geoidHeight = geoidHeight
+    return mapPoint
+
+
+def sphere(source: Points, GM=False):
+    if not source.all(GeoPoint):
+        raise Exception('points should be of type GeoPoint')
+
+    if GM:
+        geoids = [point.geoidHeight - point.GMHeight for point in source]
+    else:
+        geoids = [point.geoidHeight for point in source]
+
+    designArray = [[1, cos(point.lat.radians) * cos(point.lon.radians), cos(point.lat.radians) * sin(point.lon.radians),
+                    sin(point.lat.radians)] for point in source]
+    paramsValues = np.linalg.lstsq(designArray, geoids, rcond=None)
+    paramsValues = paramsValues[0]
+    paramsKeys = ['a0', 'a1', 'a2', 'a3']
+    params = dict(zip(paramsKeys, paramsValues))
+    params['GM'] = GM
+    return params
+
+
+def applySphere(point: GeoPoint, params):
+    if not isinstance(point, GeoPoint):
+        raise Exception('point should be of MapPoint type')
+
+    if params['GM']:
+        if point.GMHeight:
+            GMHeight = point.GMHeight
+        else:
+            raise Exception('You apply a transformation that includes GMHeight'
+                            'while your point does not have a valid GMHeight')
+    else:
+        GMHeight = 0
+
+    geoidHeight = (params['a0'] +
+                   params['a1']*cos(point.lat.radians)*cos(point.lon.radians) +
+                   params['a2']*cos(point.lat.radians)*sin(point.lon.radians) +
+                   params['a3']*sin(point.lat.radians)) + GMHeight
+    geoPoint = deepcopy(point)
+    geoPoint.geoidHeight = geoidHeight
+    return geoPoint
 
 
 class Transformation:
-    def __init__(self, transName, source, target = None,
-                 scale=True, rotation=True, shift=True):
+    def __init__(self, transName: str, source: Points, target=None,
+                 scale=True, rotation=True, shift=True, GM=False):
         """
-        source: list of MapPoints or GeoPoints
-        target: list of MapPoints or GeoPoints
+        source: class of Points
+        target: class of Points
         system: type Ellipsoid or Projection
         """
-        self.name = transName
-        self.system = None
         self.source = source
         self.target = target
+        self.coordSystem = None
         self.scale = scale
         self.rotation = rotation
         self.shift = shift
+        self.GM = GM
         self.params = None
 
-        transType = {'similarity': self.similarity, 'affine': self.affine, 'plane': self.plane,
-                     'poly2d': self.poly2d, 'spheare': self.spheare}
-        transType[transName]()
+        self.transName = transName
 
-    def similarity(self):
+        # if self.GM:
+        #     GMheights = egm08(self.source)  # list of geoid undulations of source point
+        #     for point, height in zip(self.source, GMheights):
+        #         point.GMHeight = height
+
+        self.transType = {'sim2D': self.applySim2D, 'sim3D': self.applySim3D,
+                          'plane': self.applyPlane, 'poly2d': self.applyPoly2D,
+                          'sphere': self.applySphere}
+
+    @property
+    def sim2D(self):
         """
         returns: list o transformation parameters
                  [c, d, tx, ty] if source & target list of MapPoints
         """
-        if all(isinstance(x, MapPoint) for x in (self.source + self.target)):
-            self.system = self.target[0].projection
+        self.coordSystem = self.target.coordSystem
+        return sim2D(self.source, self.target, self.scale, self.rotation,
+                     self.shift)
 
-            designArray = []  # array_like
-            for point in self.source:
-                scaleRotArray = shiftArray = [[], []]
-                if self.rotation:
-                    scaleRotArray = [[point.x, point.y], [point.y, -point.x]]
-                else:
-                    if self.scale:
-                        scaleRotArray = [[point.x], [point.y]]
-                if self.shift:
-                    shiftArray = [[1, 0], [0, 1]]
-                for x, y in zip(scaleRotArray, shiftArray):
-                    designArray.append(x+y)
+    def applySim2D(self, point):
+        return applySim2D(point, self.sim2D)
 
-            target = [coord for point in self.target for coord in [point.x, point.y]]
-            paramsValues = np.linalg.lstsq(designArray, target, rcond=None)
-            paramsValues = paramsValues[0]
+    @property
+    def sim3D(self):
+        self.coordSystem = self.target.coordSystem
+        return sim3D(self.source, self.target, self.scale, self.rotation,
+                     self.shift)
 
-            paramsKeys = ['c', 'd', 'tx', 'ty']
-            if not self.rotation and self.scale:
-                paramsKeys.pop('c')
-                paramsKeys.pop('d')
-            if not self.rotation:
-                paramsKeys.pop('d')
-            if not self.shift:
-                paramsKeys.pop('tx')
-                paramsKeys.pop('ty')
+    def applySim3D(self, point):
+        return applySim2D(point, self.sim3D)
 
-            params = {'c': 1, 'd': 0, 'tx': 0, 'ty': 0}
-            params.update(zip(paramsKeys, paramsValues))
-
-            self.params = params
-
-        elif all(isinstance(x, GeoPoint) for x in (self.source + self.target)):
-            self.system = self.target[0].ellipsoid
-
-            source = geodeticToECEF(self.source)
-            target = geodeticToECEF(self.target)
-            designArray = []  # array_like
-            for point in source:
-                scaleArray = rotArray = shiftArray = [[], [], []]
-                if self.scale:
-                    scaleArray = [[point.x], [point.y], [point.z]]
-                if self.rotation:
-                    rotArray = [[0, -point.z, point.y], [point.z, 0, -point.x],
-                                [-point.y, point.x, 0]]
-                if self.shift:
-                    shiftArray = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-
-                for x, y, z in zip(scaleArray, rotArray, shiftArray):
-                    designArray.append(x+y+z)
-
-            target = [coord for a, b in zip(target, source)
-                      for coord in [a.x - b.x, a.y - b.y, a.z - b.z]]
-
-            paramsValues = np.linalg.lstsq(designArray, target, rcond=None)
-            paramsValues = paramsValues[0]
-
-            paramsKeys = [x if y else [] for x, y in
-                          zip([['dm'], ['ex', 'ey', 'ez'], ['tx', 'ty', 'tz']],
-                              [self.scale, self.rotation, self.shift])]
-            paramsKeys = [x for sublist in paramsKeys for x in sublist]
-
-            params = {'dm': 0, 'ex': 0, 'ey': 0, 'ez': 0, 'tx': 0, 'ty': 0, 'tz': 0}
-            params.update(zip(paramsKeys, paramsValues))
-
-            self.params = params
-        else:
-            raise Exception('Points should be of MapPoint or GeoPoint class')
-
+    @property
     def plane(self):
         """"""
-        if isinstance(self.source[0], GeoPoint):
-            projection = projWithCommonEll(self.source[0].ellipsoid)
-        else:
-            projection = self.source[0].projection
-        self.system = projection
-        source = project(self.source, projection)
+        return plane(self.source, self.GM)
 
-        geoids = [point.geoidHeight for point in source]
-        designArray = [[1, point.x, point.y] for point in source]
-        paramsValues = np.linalg.lstsq(designArray, geoids, rcond=None)
-        paramsValues = paramsValues[0]
-        paramsKeys = ['a0', 'a1', 'a2']
-        self.params = dict(zip(paramsKeys, paramsValues))
+    def applyPlane(self, point):
+        return applyPlane(point, self.plane)
 
+    @property
     def poly2d(self):
         """"""
-        if isinstance(self.source[0], GeoPoint):
-            projection = projWithCommonEll(self.source[0].ellipsoid)
-        else:
-            projection = self.source[0].projection
-        self.system = projection
-        source = project(self.source, projection)
+        return poly2d(self.source, self.GM)
 
-        geoids = [point.geoidHeight for point in source]
-        designArray = [[1, point.x, point.y, point.x*point.y, point.x**2, point.y**2] for point in source]
-        paramsValues = np.linalg.lstsq(designArray, geoids, rcond=None)
-        paramsValues = paramsValues[0]
-        paramsKeys = ['a0', 'a1', 'a2', 'a3', 'a4', 'a5']
-        self.params = dict(zip(paramsKeys, paramsValues))
+    def applyPoly2D(self, point):
+        return applyPoly2d(point, self.poly2d)
 
-    def spheare(self):
+    @property
+    def sphere(self):
         """"""
-        source = unproject(self.source, 'latlonh-r')
-        geoids = [point.geoidHeight for point in source]
-        designArray = [[1, cos(point.x)*cos(point.y), cos(point.x)*sin(point.y),
-                        sin(point.x)] for point in source]
-        paramsValues = np.linalg.lstsq(designArray, geoids, rcond=None)
-        paramsValues = paramsValues[0]
-        paramsKeys = ['a0', 'a1', 'a2', 'a3']
-        self.params = dict(zip(paramsKeys, paramsValues))
+        return sphere(self.source, self.GM)
+
+    def applySphere(self, point):
+        return applySphere(point, self.sphere)
 
     def affine(self):
         """"""
 
-
-def _transform(point, transformation):
-    params = transformation.params
-    if transformation.name == 'similarity':
-        if isinstance(point, MapPoint):
-            E = params['c']*point.x + params['d']*point.y + params['tx']
-            N = -params['d']*point.x + params['c']*point.y + params['ty']
-            return MapPoint(point.id, E, N, point.z, transformation.system, None)
-        elif isinstance(point, GeoPoint):
-            coordType = point.coordType
-            _point = geodeticToECEF(point)
-            X = params['dm']*_point.x + params['ez']*_point.y -\
-                params['ey']*_point.z + params['tx'] + _point.x
-            Y = -params['ez']*_point.x + params['dm']*_point.y +\
-                params['ex']*_point.z + params['ty'] + _point.y
-            Z = params['ey']*_point.x - params['ex']*_point.y +\
-                params['dm']*_point.z + params['tz'] + _point.z
-            _point = GeoPoint(point.id, X, Y, Z, 'ECEF', transformation.system, None)
-            if coordType != 'ECEF':
-                _point.latlonh(point.coordType.split('-')[1])
-            return _point
-    elif transformation.name == 'plane':
-        _point = project(point, transformation.system)
-        geoidHeight = params['a0'] + params['a1']*_point.x + params['a2']*_point.y
-        _point = deepcopy(point)
-        _point.geoidHeight = geoidHeight
-        return _point
-    elif transformation.name == 'poly2d':
-        _point = project(point, transformation.system)
-        geoidHeight = (params['a0'] + params['a1']*_point.x + params['a2']*_point.y +
-                       params['a3']*_point.x*_point.y + params['a4']*_point.x**2 +
-                       params['a5']*_point.y**2)
-        _point = deepcopy(point)
-        _point.geoidHeight = geoidHeight
-        return _point
-    elif transformation.name == 'spheare':
-        _point = unproject(point, 'latlonh-r')
-        geoidHeight = (params['a0'] + params['a1']*cos(_point.x)*cos(_point.y) +
-                       params['a2']*cos(_point.x)*sin(_point.y) + params['a3']*sin(_point.x))
-        _point = deepcopy(point)
-        _point.geoidHeight = geoidHeight
-        return _point
-    else:
-        _point = deepcopy(point)
-        return point
+    def transform(self, point):
+        return self.transType[self.transName](point)
 
 
-def transform(points, transformation):
-    if isinstance(points, list):
-        return [_transform(point, transformation) for point in points]
-    else:
-        return _transform(points, transformation)
-
-
-def transformPointSets(transName, source, target, sourceRest = None, ifMap2Dor3D = '2D'):
+def transform123(transName, source: Points, target: Points, sourceRest: Points, GM=False):
     """
+    source: list of GeoPoints or MapPoints
+    target: list of GeoPoints or MapPoints
+    sourceRest: list of GeoPoints or MapPoints
     """
-    # Make them all GeoPoints  
-    _source = unproject(source, 'ECEF')
-    _target = unproject(target, 'ECEF')     
-    _sourceRest = unproject(sourceRest, 'ECEF')
-    #
-    if isinstance(target[0], GeoPoint):
-        transformation = Transformation(transName, _source, _target)
-        _source = transform(_source, transformation)
-        _sourceRest = transform(_sourceRest, transformation)
-    elif isinstance(target[0], MapPoint):
-        if ifMap2Dor3D == '2D':
-            transformation = Transformation(transName, _source, _target,
-                                            False, False, True)
-            _source = transform(_source, transformation)
-            _sourceRest = transform(_sourceRest, transformation)
-            
-            _source = project(_source, target[0].projection)
-            _sourceRest = project(_sourceRest, target[0].projection)
+    if GM:
+        if not all(source.GMHeight):
+            source = egm08(source)
+        if not all(sourceRest.GMHeight):
+            sourceRest = egm08(sourceRest)
 
-            transformation = Transformation(transName, _source, target)
-            _source = transform(_source, transformation)
-            _sourceRest = transform(_sourceRest, transformation)
-        elif ifMap2Dor3D == '3D':
-            transformation = Transformation(transName, _source, _target)
-            _source = transform(_source, transformation)
-            _sourceRest = transform(_sourceRest, transformation)
-            
-            _source = project(_source, target[0].projection)
-            _sourceRest = project(_sourceRest, target[0].projection)
-    
-    return _source, _sourceRest
-            
-            
-        
-    
-    
-    
-    
+    if transName == 'sim3D':
+        # Make all ECEFpoints
+        ECEFsource = source.ECEF()
+        ECEFtarget = target.ECEF()
+        ECEFsourceRest = sourceRest.ECEF()
+        #
+        transformation = Transformation('sim3D', ECEFsource, ECEFtarget)
+        sourceTR = ECEFsource.transform(transformation)
+        sourceRestTR = ECEFsourceRest.transform(transformation)
+        if target.elmsType is GeoPoint:
+            sourceTR = sourceTR.geodetic()
+            sourceRestTR = sourceRestTR.geodetic()
+        elif target.elmsType is MapPoint:
+            sourceTR = sourceTR.project(target.coordSystem)
+            sourceRestTR = sourceRestTR.project(target.coordSystem)
+        return sourceTR, sourceRestTR
 
+    elif transName == 'sim2D':
+        if target.elmsType is not MapPoint:
+            raise Exception('')
+        # Make all ECEFpoints
+        ECEFsource = source.ECEF()
+        ECEFtarget = target.ECEF()
+        ECEFsourceRest = sourceRest.ECEF()
+        #
+        transformation = Transformation('sim3D', ECEFsource, ECEFtarget,
+                                        scale=False, rotation=False, shift=True)
+        sourceTR = ECEFsource.transform(transformation)
+        sourceRestTR = ECEFsourceRest.transform(transformation)
+        #
+        sourceTR = sourceTR.project(target.coordSystem)
+        sourceRestTR = sourceRestTR.project(target.coordSystem)
+        transformation = Transformation('sim2D', sourceTR, target)
+        sourceTR = sourceTR.transform(transformation)
+        sourceRestTR = sourceRestTR.transform(transformation)
+        return sourceTR, sourceRestTR
 
+    elif transName in ['plane', 'poly2d']:
+        sourceRestTR = deepcopy(sourceRest)
+        if source.elmsType is not MapPoint:
+            projection = filterProj(source.coordSystem)
+            source = source.project(projection)
+            sourceRest = sourceRest.project(projection)
+        transformation = Transformation(transName, source, GM=GM)
+        mapSourceRestTR = sourceRest.transform(transformation)
+        sourceRestTR.geoidHeight = mapSourceRestTR.geoidHeight
+        return sourceRestTR
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    elif transName in 'sphere':
+        sourceRestTR = deepcopy(sourceRest)
+        if source.elmsType is not GeoPoint:
+            source = source.geodetic()
+            sourceRest = sourceRest.geodetic()
+        transformation = Transformation(transName, source, GM=GM)
+        mapSourceRestTR = sourceRest.transform(transformation)
+        sourceRestTR.geoidHeight = mapSourceRestTR.geoidHeight
+        return sourceRestTR
