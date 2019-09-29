@@ -4,7 +4,6 @@
 """
 from importlib import import_module
 from loadFiles import loadEllipsoidParams, loadProjParams
-from angles import DMStoRads, radToDMS, Angle
 from csv import reader
 
 
@@ -40,7 +39,7 @@ class Projection:
     """
     Creates Projection objects
     """
-    def __init__(self, projName, lat0=None, lon0=None): #--------lat0, lon0 Angle
+    def __init__(self, projName, lat0=None, lon0=None):
         """
         Arguments
             projName: string that would be used as argument in order
@@ -74,7 +73,7 @@ class Projection:
         self._directEqns = getattr(eqnsFamily, "direct" + self.family)
         self._invEqns = getattr(eqnsFamily, "inv" + self.family)
     
-    def directEqns(self, lat, lon):  #--------lat0, lon0 Angle
+    def directEqns(self, lat, lon):
         """
         This method projects lat, lon geodetic coordinates to map coordinates.
         Arguments
@@ -131,4 +130,3 @@ def filterProj(ellipsoid):
             if line[2].strip() == ellipsoid.name:
                 return Projection(line[0].strip())
         raise Exception("The ellipsoid you defined does not exist")
-

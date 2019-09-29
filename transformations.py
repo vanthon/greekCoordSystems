@@ -1,37 +1,12 @@
 # -*- coding: utf-8 -*-
+"""
+@author: Antonios Vatalis
+"""
 import numpy as np
-from points import MapPoint, GeoPoint, ECEFpoint, Points, importPoints
-from modelers import filterProj, Ellipsoid, Projection
+from points import MapPoint, GeoPoint, ECEFpoint, Points
+from modelers import filterProj
 from copy import deepcopy
 from math import cos, sin
-from subprocess import call
-from os import path, remove
-from angles import Angle
-
-
-def egm08(source: Points):
-    """
-    source: Points
-    returns: Points
-    """
-    if path.exists("OUTPUT.DAT"):
-        remove("OUTPUT.DAT")
-
-    with open('INPUT.DAT', 'r+') as fObj:
-        for point in source.geodetic():
-            fObj.write('   {}  {}\n'.format(point.lat.dd, point.lon.dd))
-
-    call('hsynth_WGS84')
-
-    with open('OUTPUT.DAT') as fObj:
-        geoids = []
-        for line in fObj:
-            if line:
-                geoids.append(float(line.split()[2]))
-
-    points = deepcopy(source)
-    points.GMHeight = geoids
-    return points
 
 
 def sim2D(source: Points, target: Points, scale=True, rotation=True, shift=True):
@@ -355,17 +330,19 @@ class Transformation:
         return self.transType[self.transName](point)
 
 
-def transform123(transName, source: Points, target: Points, sourceRest: Points, GM=False):
+def transform(transName, source: Points, target: Points, sourceRest: Points, GM=False):
     """
-    source: list of GeoPoints or MapPoints
-    target: list of GeoPoints or MapPoints
+    source: Points
+    target: Points
     sourceRest: list of GeoPoints or MapPoints
     """
-    if GM:
+    if GM and (transName in ['plane', 'poly2d', 'sphere']):
         if not all(source.GMHeight):
-            source = egm08(source)
+            for point in source:
+                point.setGMHeight()
         if not all(sourceRest.GMHeight):
-            sourceRest = egm08(sourceRest)
+            for point in sourceRest:
+                point.setGMHeight()
 
     if transName == 'sim3D':
         # Make all ECEFpoints

@@ -1,10 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Aug 28 18:14:28 2019
-
-@author: anthon
+@author: Antonios Vatalis
 """
-
 from math import sqrt, cos, sin, tan
 from meridians import meridianLength, latFromMeridianLength
 from angles import Angle

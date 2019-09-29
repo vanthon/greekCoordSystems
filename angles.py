@@ -2,8 +2,8 @@
 """
 @author: Antonios Vatalis
 """
-
 from math import degrees, radians, pi
+latAthensBessel = '23:42:58.815'  # Athens benchmark latitude in dms (Bessel ellipsoid)
 
 
 def radToDMS(rads, degFormat, prec=None):
@@ -208,6 +208,30 @@ class Angle:
             return toDMS(self.radians, 'dms')
         else:
             return None
+
+    def shift(self, other=None):
+        try:
+            if other is not None:
+                theta = self.radians + other.radians
+            else:
+                theta = self.radians + Angle(latAthensBessel).radians
+        except TypeError:
+            return None
+        theta = Angle(theta)
+        theta.angleType = 'dms'
+        return theta
+
+    def unshift(self, other=None):
+        try:
+            if other is not None:
+                theta = self.radians - other.radians
+            else:
+                theta = self.radians - Angle(latAthensBessel).radians
+        except TypeError:
+            return None
+        theta = Angle(theta)
+        theta.angleType = 'dms'
+        return theta
 
     def __bool__(self):
         if self.value is not None:

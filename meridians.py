@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Sep  2 14:29:29 2019
-
-@author: anthon
+@author: Antonios Vatalis
 """
 from math import cos, sin
 

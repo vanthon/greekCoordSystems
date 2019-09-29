@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Wed Aug 28 18:16:44 2019
-
-@author: anthon
+@author: Antonios Vatalis
 """
 from math import sqrt, cos, sin, tan
 from angles import Angle
